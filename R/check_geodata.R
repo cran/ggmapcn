@@ -1,139 +1,293 @@
-#' Check and Download Geospatial Data from GitHub
+#' Check and Download Geospatial Data
 #'
-#' Checks if the required geospatial data files are present in the package's `inst/extdata` directory. If the files are missing, they are downloaded from a specified GitHub repository. The user can specify which files to download, or download all available files by default.
+#' @description
+#' Ensure required geodata files exist locally. The function searches and reuses
+#' existing files (when \code{overwrite = FALSE}) \emph{before} attempting any
+#' network download, in the following order:
+#' \enumerate{
+#'   \item user-provided \strong{local_dirs}
+#'   \item installed package \strong{extdata} (even if not writable)
+#'   \item per-user cache \strong{tools::R_user_dir("ggmapcn","data")}
+#' }
+#' If no valid local file is found (or \code{overwrite = TRUE}), the function
+#' downloads from mirrors \emph{in order}. By default, a China-friendly CDN
+#' (jsDelivr) is tried first, then GitHub raw.
 #'
-#' This function uses the `curl` package to download files, and supports displaying a progress bar during the download process. It is particularly useful for large files or when the default download method (`download.file`) is slow or unreliable.
+#' Robust features: multiple mirrors, atomic writes, resume, timeouts, retries,
+#' safe checksum checks, and correct \code{curl} progress callback.
 #'
-#' @param files Character vector. The names of the data files to download. If `NULL`, all available files will be downloaded.
-#' @param overwrite Logical. Whether to overwrite existing files in `inst/extdata/`. Default is `FALSE`.
-#' @param quiet Logical. If `TRUE`, suppresses message outputs when files already exist. Default is `FALSE`.
-#' @param max_retries Integer. The maximum number of retries if a download fails. Default is `3`.
-#' @return A character vector of file paths to the downloaded or existing files.
+#' @param files Character vector of file names. If `NULL`, all known files are used.
+#' @param overwrite Logical. Force re-download even if a non-empty file exists.
+#'   Default `FALSE`.
+#' @param quiet Logical. Suppress progress and messages. Default `FALSE`.
+#' @param max_retries Integer. Max retry attempts per (mirror, file). Default `3`.
+#' @param mirrors Character vector of base URLs (end with `/`). Tried in order.
+#'   Default: jsDelivr first, then GitHub raw.
+#' @param use_checksum Logical. Verify SHA-256 when available. Default `TRUE`.
+#' @param checksums Named character vector of SHA-256 digests (names = file names).
+#'   If `NULL`, built-in defaults are used for known files; unknown files skip verification.
+#' @param resume Logical. Try HTTP range resume if a `.part` exists (only for
+#'   writable dirs). Default `TRUE`.
+#' @param local_dirs Character vector of directories to search \emph{before}
+#'   any download. If a matching non-empty file is found and \code{overwrite = FALSE},
+#'   it is returned immediately.
+#'
+#' @return Character vector of absolute file paths (NA for failures).
+#'
 #' @examples
 #' \donttest{
-#' # Check for and download all geospatial data from GitHub
-#' file_paths <- check_geodata()
+#' # Basic: ensure default files exist
+#' check_geodata()
 #'
-#' # Check and download specific files
-#' file_paths <- check_geodata(files = c("boundary.rda"))
+#' # Single file: reuse existing file if present (default overwrite = FALSE)
+#' check_geodata(files = "boundary.rda")
+#'
+#' # Force re-download a file (e.g., suspected corruption)
+#' check_geodata(files = "boundary.rda", overwrite = TRUE)
+#'
+#' # Search local folders first; skip download if a valid file is found there
+#' check_geodata(
+#'   files = c("boundary.rda", "world.rda"),
+#'   local_dirs = c(getwd())  # add more directories if needed
+#' )
+#'
+#' # Provide your own mirror order (first tried wins)
+#' check_geodata(
+#'   files = "boundary.rda",
+#'   mirrors = c(
+#'     "https://cdn.jsdelivr.net/gh/Rimagination/ggmapcn-data@main/data/",
+#'     "https://raw.githubusercontent.com/Rimagination/ggmapcn-data/main/data/"
+#'   )
+#' )
 #' }
-#' @importFrom curl curl_download
-#' @importFrom utils packageDescription
+#'
 #' @export
-check_geodata <- function(files = NULL, overwrite = FALSE, quiet = FALSE, max_retries = 3) {
+#' @importFrom curl curl_download new_handle handle_setopt
+#' @importFrom tools R_user_dir
+#' @importFrom digest digest
+#' @importFrom stats runif
+#'
+check_geodata <- function(files = NULL,
+                          overwrite = FALSE,
+                          quiet = FALSE,
+                          max_retries = 3,
+                          mirrors = NULL,
+                          use_checksum = TRUE,
+                          checksums = NULL,
+                          resume = TRUE,
+                          local_dirs = NULL) {
 
-  # Define the fixed GitHub URL (do not expose to the user)
-  github_url <- "https://raw.githubusercontent.com/Rimagination/ggmapcn-data/main/data/"
+  # ---- helpers --------------------------------------------------------------
+  known <- known_files()
+  if (is.null(files)) files <- names(known)
+  invalid <- setdiff(files, names(known))
+  if (length(invalid)) stop("Invalid file names requested: ", paste(invalid, collapse = ", "))
 
-  # Get the package path where the data should be stored
-  package_path <- system.file(package = "ggmapcn")
-
-  # Define the directory to save the downloaded files
-  extdata_path <- file.path(package_path, "extdata")
-
-  # First, check if the file exists in the package's inst/extdata directory
-  file_list <- c("China_sheng.rda",
-                 "China_shi.rda",
-                 "China_xian.rda",
-                 "boundary.rda",
-                 "buffer_line.rda",
-                 "China_mask.gpkg",
-                 "world.rda",
-                 "gebco_2024_China.tif",
-                 "vege_1km_projected.tif")
-
-  # If no specific files are requested, download all files
-  if (is.null(files)) {
-    files <- file_list
-  } else {
-    # Check for invalid file names
-    invalid_files <- setdiff(files, file_list)
-    if (length(invalid_files) > 0) {
-      stop("Invalid file names requested: ", paste(invalid_files, collapse = ", "))
-    }
+  # mirrors: CDN (CN) first
+  if (is.null(mirrors)) {
+    mirrors <- c(
+      "https://cdn.jsdelivr.net/gh/Rimagination/ggmapcn-data@main/data/",
+      "https://raw.githubusercontent.com/Rimagination/ggmapcn-data/main/data/"
+    )
   }
 
-  # Create a vector to store the paths of the downloaded files
-  downloaded_files <- vector("character", length(files))
+  # checksums (safe getter)
+  if (is.null(checksums)) {
+    checksums <- vapply(known, `[[`, character(1), "sha256")
+    names(checksums) <- names(known)
+  }
+  has_checksum <- function(f) {
+    x <- checksums[[f]]
+    is.character(x) && length(x) == 1L && !is.na(x) && nzchar(x)
+  }
 
-  # Loop through the requested files and check if they already exist
-  for (i in seq_along(files)) {
-    file_name <- files[i]
+  # canonical dirs
+  ext_dir   <- system.file("extdata", package = "ggmapcn")
+  cache_dir <- tools::R_user_dir("ggmapcn", "data")
+  if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 
-    # First, try to get the file from the extdata path
-    file_path <- file.path(extdata_path, file_name)
+  is_writable <- function(dir) {
+    if (!nzchar(dir) || !dir.exists(dir)) return(FALSE)
+    tf <- file.path(dir, sprintf(".perm_test_%08x", as.integer(runif(1, 0, 1e9))))
+    ok <- tryCatch({ file.create(tf); file.exists(tf) }, warning = function(w) FALSE, error = function(e) FALSE)
+    if (ok) unlink(tf)
+    isTRUE(ok)
+  }
+  ext_writable   <- nzchar(ext_dir) && is_writable(ext_dir)
+  cache_writable <- is_writable(cache_dir)
 
-    if (!file.exists(file_path)) {
-      # If the file doesn't exist in extdata, try tempdir()
-      temp_path <- file.path(tempdir(), file_name)
-      if (!file.exists(temp_path)) {
-        # If not in tempdir() either, proceed with downloading
-        file_path <- temp_path
-      } else {
-        # If found in tempdir(), use it and skip download
-        downloaded_files[i] <- temp_path
-        if (!quiet) {
-          message(file_name, " already exists in tempdir(). Skipping download.")
+  if (!quiet) {
+    message(sprintf("extdata dir: %s (writable = %s)", if (nzchar(ext_dir)) ext_dir else "<none>", ext_writable))
+    message(sprintf("cache   dir: %s (writable = %s)", cache_dir, cache_writable))
+  }
+
+  # verify checksum if provided
+  verify_file <- function(path, fname) {
+    if (!use_checksum || !has_checksum(fname)) return(TRUE)
+    got <- digest::digest(path, algo = "sha256", file = TRUE)
+    identical(tolower(got), tolower(checksums[[fname]]))
+  }
+
+  # try reuse in a list of dirs (no download)
+  try_reuse_in_dirs <- function(fname, dirs) {
+    for (d in dirs) {
+      if (!nzchar(d) || !dir.exists(d)) next
+      cand <- file.path(d, fname)
+      if (file.exists(cand) && file.info(cand)$size > 0) {
+        if (verify_file(cand, fname)) {
+          return(normalizePath(cand, winslash = "/", mustWork = FALSE))
+        } else if (!quiet) {
+          warning(fname, ": found at ", cand, " but checksum mismatch; ignoring.")
         }
-        next
       }
-    } else {
-      # If file exists in extdata, use it
-      downloaded_files[i] <- file_path
+    }
+    return(NA_character_)
+  }
+
+  # curl plumbing
+  mk_handle <- function(resume_from = NULL) {
+    h <- curl::new_handle(
+      noprogress       = FALSE,
+      timeout          = 300,
+      connecttimeout   = 30,
+      low_speed_limit  = 10,
+      low_speed_time   = 30,
+      followlocation   = TRUE,
+      useragent        = "ggmapcn/check_geodata (curl)"
+    )
+    if (!is.null(resume_from) && resume_from > 0) {
+      curl::handle_setopt(h, resume_from = as.numeric(resume_from))
+    }
+    h
+  }
+  prog_cb <- function(file_name, quiet) {
+    function(dt, dn, ut, un) {
       if (!quiet) {
-        message(file_name, " already exists in extdata. Skipping download.")
+        pct <- if (is.finite(dt) && dt > 0) sprintf("%6.2f%%", 100 * dn / dt) else "  ..  "
+        cat(sprintf("\rDownloading %-28s %s", substr(file_name, 1, 28), pct))
       }
-      next
+      0
     }
+  }
+  backoff <- function(k) { base <- 2^(k - 1); jitter <- runif(1, 0, 1); min(30, base + jitter) }
 
-    # Construct the raw URL for the file from GitHub
-    file_url <- paste0(github_url, file_name)
+  fetch_one <- function(url, dest, fname, can_resume) {
+    dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+    part <- paste0(dest, ".part")
+    if (!can_resume && file.exists(part)) unlink(part)
+    resume_from <- if (can_resume && file.exists(part)) file.info(part)$size else NULL
 
-    # Download the file if it doesn't exist locally or if overwrite is TRUE
-    if (!quiet) {
-      message("Downloading ", file_name, " from GitHub...")
+    ok <- FALSE; last_err <- NULL
+    for (k in seq_len(max_retries)) {
+      h <- mk_handle(resume_from = resume_from)
+      curl::handle_setopt(h, progressfunction = prog_cb(basename(dest), quiet))
+      err <- try({ curl::curl_download(url, destfile = part, handle = h, quiet = TRUE) }, silent = TRUE)
+
+      if (inherits(err, "try-error")) {
+        last_err <- conditionMessage(attr(err, "condition"))
+      } else if (!file.exists(part) || file.info(part)$size == 0) {
+        last_err <- "empty file / zero size"
+      } else if (has_checksum(fname) && use_checksum) {
+        got <- digest::digest(part, algo = "sha256", file = TRUE)
+        if (!identical(tolower(got), tolower(checksums[[fname]]))) {
+          last_err <- sprintf("checksum mismatch: got %s, want %s", got, checksums[[fname]])
+        } else last_err <- NULL
+      } else {
+        last_err <- NULL
+      }
+
+      if (is.null(last_err)) { ok <- TRUE; break }
+      if (!quiet) { cat("\n"); warning(sprintf("Attempt %d failed: %s", k, last_err)) }
+      if (k < max_retries) { Sys.sleep(backoff(k)); resume_from <- NULL }
     }
+    if (!quiet) cat("\n")
+    if (!ok) return(FALSE)
 
-    # Attempt to download with retries
-    attempt <- 1
+    if (file.exists(dest)) unlink(dest)
+    file.rename(part, dest)
+    TRUE
+  }
+
+  try_download_to_dir <- function(target_dir, fname, can_resume) {
+    dest <- file.path(target_dir, fname)
     success <- FALSE
-    while (attempt <= max_retries && !success) {
-      tryCatch({
-        # Use curl_download from the curl package to download the file
-        curl_download(
-          url = file_url,
-          destfile = file_path,
-          handle = curl::new_handle(progressfunction = function(down, up) {
-            if (!quiet) {
-              percent <- (down / up) * 100
-              cat(sprintf("\rDownloading %s: %.2f%%", file_name, percent))
-            }
-          })
-        )
+    if (!quiet) message("Fetching ", fname, " into: ", target_dir)
+    for (m in mirrors) {
+      url <- paste0(m, fname)
+      if (!quiet) message("URL: ", url)
+      if (fetch_one(url, dest, fname, can_resume)) { success <- TRUE; break }
+    }
+    list(ok = success, path = if (success) dest else NA_character_)
+  }
 
-        # Mark as successful if download completes
-        success <- TRUE
-        downloaded_files[i] <- file_path
-        if (!quiet) {
-          cat("\nDownload complete!\n")
-        }
-      }, error = function(e) {
-        # Handle specific errors like timeout or SSL errors
-        if (attempt == max_retries) {
-          warning(paste("Failed to download", file_name, "after", max_retries, "attempts."))
-          downloaded_files[i] <- NA
-        } else {
-          warning(paste("Attempt", attempt, "failed to download", file_name, "due to error:", e$message))
-          message("Retrying in 5 seconds...")
-          Sys.sleep(5)  # Wait for 5 seconds before retrying
-        }
-      })
+  # ---- main loop ------------------------------------------------------------
+  out <- character(length(files))
 
-      # Increment retry attempt counter
-      attempt <- attempt + 1
+  for (i in seq_along(files)) {
+    fname <- files[i]
+
+    # A) pre-check & reuse when overwrite=FALSE
+    if (!overwrite) {
+      # A1) user local dirs
+      if (length(local_dirs)) {
+        hit <- try_reuse_in_dirs(fname, local_dirs)
+        if (!is.na(hit)) { out[i] <- hit; if (!quiet) message("Using existing local file (local_dirs): ", hit); next }
+      }
+      # A2) extdata
+      if (nzchar(ext_dir)) {
+        hit <- try_reuse_in_dirs(fname, ext_dir)
+        if (!is.na(hit)) { out[i] <- hit; if (!quiet) message("Using existing extdata file: ", hit); next }
+      }
+      # A3) cache
+      hit <- try_reuse_in_dirs(fname, cache_dir)
+      if (!is.na(hit)) { out[i] <- hit; if (!quiet) message("Using existing cache file: ", hit); next }
+    }
+
+    # B) need download (either overwrite=TRUE or not found/invalid)
+    # B1) prefer extdata if writable
+    tried_ext <- FALSE
+    if (ext_writable) {
+      tried_ext <- TRUE
+      res <- try_download_to_dir(ext_dir, fname, can_resume = resume)
+      if (res$ok) { out[i] <- res$path; if (!quiet) message("Saved to extdata: ", res$path); next }
+      if (!quiet) warning("extdata download failed for ", fname, "; falling back to cache.")
+    } else if (nzchar(ext_dir) && !quiet) {
+      message("extdata not writable; skip downloading into extdata for ", fname)
+    }
+
+    # B2) fallback: cache (writable)
+    res2 <- try_download_to_dir(cache_dir, fname, can_resume = TRUE)
+    if (res2$ok) {
+      out[i] <- res2$path; if (!quiet) message("Saved to cache: ", res2$path)
+    } else {
+      out[i] <- NA_character_
+      warning("Failed to obtain ", fname, " from all mirrors (extdata", if (tried_ext) "" else " not tried", " and cache).")
     }
   }
 
-  # Return the paths of downloaded or existing files
-  return(downloaded_files)
+  out
+}
+
+#' Known geodata files and metadata
+#'
+#' @return A named list. Each element is a list with fields:
+#'   \itemize{
+#'     \item \code{path}   File name (same as the element's name)
+#'     \item \code{sha256} SHA-256 digest or \code{NA_character_} if unknown
+#'   }
+#' @keywords internal
+#' @noRd
+known_files <- function() {
+  # TODO: Fill official SHA-256 values when available
+  list(
+    "China_sheng.rda"         = list(path = "China_sheng.rda",         sha256 = NA_character_),
+    "China_shi.rda"           = list(path = "China_shi.rda",           sha256 = NA_character_),
+    "China_xian.rda"          = list(path = "China_xian.rda",          sha256 = NA_character_),
+    "boundary.rda"            = list(path = "boundary.rda",            sha256 = NA_character_),
+    "buffer_line.rda"         = list(path = "buffer_line.rda",         sha256 = NA_character_),
+    "China_mask.gpkg"         = list(path = "China_mask.gpkg",         sha256 = NA_character_),
+    "world.rda"               = list(path = "world.rda",               sha256 = NA_character_),
+    "gebco_2024_China.tif"    = list(path = "gebco_2024_China.tif",    sha256 = NA_character_),
+    "vege_1km_projected.tif"  = list(path = "vege_1km_projected.tif",  sha256 = NA_character_)
+  )
 }

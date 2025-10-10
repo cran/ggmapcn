@@ -13,58 +13,68 @@ geom_mapcn(
   linewidth = 0.5,
   filter_attribute = NULL,
   filter = NULL,
+  mapping = NULL,
   ...
 )
 }
 \arguments{
-\item{data}{An `sf` object containing China's map data. If `NULL`, the function loads the package's default map.
-Users can select provincial, municipal, or county-level maps using the `admin_level` parameter.}
+\item{data}{An `sf` object of geometries to draw. If `NULL`, the function
+loads the packaged dataset for the chosen `admin_level`.}
 
-\item{admin_level}{A character string specifying the administrative level of the map.
-Options are `"province"` (default), `"city"`, or `"county"`. The corresponding `.rda` files
-(`China_sheng.rda`, `China_shi.rda`, `China_xian.rda`) must be located in the package's `extdata` folder.}
+\item{admin_level}{Administrative level to plot. One of `"province"`
+(default), `"city"`, or `"county"`. These correspond to packaged
+files `China_sheng.rda`, `China_shi.rda`, and `China_xian.rda`.}
 
-\item{crs}{A string specifying the Coordinate Reference System (CRS). Defaults to
-`"+proj=aeqd +lat_0=35 +lon_0=105 +ellps=WGS84 +units=m +no_defs"`. Users can specify other CRS strings
-(e.g., `"EPSG:4326"`).}
+\item{crs}{Coordinate Reference System to use for plotting. Defaults to an
+Azimuthal Equidistant projection centered on China:
+`"+proj=aeqd +lat_0=35 +lon_0=105 +ellps=WGS84 +units=m +no_defs"`.
+Accepts proj strings or EPSG codes (e.g., `"EPSG:4326"`).}
 
-\item{color}{Border color. Default is `"black"`.}
+\item{color}{Border color. Default `"black"`.}
 
-\item{fill}{Fill color. Default is `"white"`.}
+\item{fill}{Fill color. Default `"white"`.}
 
-\item{linewidth}{Line width for borders. Default is `0.5`.
-Note: `linewidth` is used to control the border width in `ggplot2` version 3.3.0 or higher. Use `size` for earlier versions.}
+\item{linewidth}{Border line width. Default `0.5`.
+For older `ggplot2` versions, use `size` instead of `linewidth`.}
 
-\item{filter_attribute}{Column name for filtering regions (e.g., `"name_en"`).}
+\item{filter_attribute}{Optional column name used to filter features
+(e.g., `"name_en"`).}
 
-\item{filter}{A character vector of values to filter specific regions (e.g., `c("Beijing", "Shanghai")`).}
+\item{filter}{Optional character vector of values to keep (e.g.,
+`c("Beijing","Shanghai")`). If supplied with `filter_attribute`,
+features are filtered accordingly. If the result is empty, an error
+is thrown.}
 
-\item{...}{Additional parameters passed to `geom_sf`.}
+\item{mapping}{Optional aesthetics mapping passed to `geom_sf()`.
+Useful when you already have aesthetics to apply (e.g., fill).}
+
+\item{...}{Additional arguments forwarded to `ggplot2::geom_sf()`.}
 }
 \value{
-A `ggplot2` layer (of class `ggproto`) for visualizing China's administrative boundaries.
-This layer can be added to a `ggplot` object to generate maps with customizable projections,
-border colors, fill colors, and more.
+A `ggplot2` layer.
 }
 \description{
-`geom_mapcn` provides a flexible interface for visualizing China's administrative boundaries.
-Users can select administrative levels (province, city, or county), apply custom projections,
-and filter specific regions.
+`geom_mapcn()` plots China's administrative boundaries with a simple,
+opinionated interface. It loads packaged map data when `data` is `NULL`,
+removes the special row labeled `"Boundary Line"`, supports optional
+attribute-based filtering, and can reproject to a user-specified CRS.
 }
 \examples{
-# Plot provincial map (default)
-ggplot() +
+# Basic provincial map
+ggplot2::ggplot() +
   geom_mapcn() +
-  theme_minimal()
+  ggplot2::theme_minimal()
 
-# Filter specific provinces
-ggplot() +
-  geom_mapcn(filter_attribute = "name_en", filter = c("Beijing", "Shanghai"), fill = "red") +
-  theme_minimal()
+# Filter by names stored in the data (e.g., English names)
+ggplot2::ggplot() +
+  geom_mapcn(filter_attribute = "name_en",
+             filter = c("Beijing", "Shanghai"),
+             fill = "red") +
+  ggplot2::theme_minimal()
 
-# Use a Mercator projection
-ggplot() +
+# Use a different projection
+ggplot2::ggplot() +
   geom_mapcn(crs = "+proj=merc", linewidth = 0.7) +
-  theme_minimal()
+  ggplot2::theme_minimal()
 
 }
