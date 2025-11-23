@@ -1,17 +1,35 @@
-# ggmapcn 0.2.0
+ggmapcn 0.3.0
+=============
 
-## NEW FEATURES
+NEW FEATURES
+------------
 
-* Added the `annotation_compass()` function to add a powerful and highly customizable compass/north arrow to maps.
-  * Supports alignment to "grid" north or "true" north via the which_north argument.
-  * Can be easily placed in any corner of the plot panel using the location argument.
+- **New function: `annotation_graticule()`**  
+  Adds a projection-aware global graticule system with customizable spacing, labeling,
+  and automatic antimeridian handling.
 
-* Introduced a family of built-in style constructors (compass-styles) for `annotation_compass()` to support a wide range of visual appearances:
-  * Classic Styles: `north_arrow_classic()` and `north_arrow_solid()`.
-  * Compass Rose Styles: `compass_rose_simple()`, `compass_rose_classic()`, and `compass_rose_circle()`.
-  * Original Chinese-Themed Styles: Added two unique styles, `compass_guiding_fish()` (Guiding Fish) and `compass_sinan()` (Sinan), inspired by ancient Chinese navigational instruments to add a cultural touch to maps.
-  
-* Added the annotation_scalebar() function to add a projection-aware and intelligent scale bar.
-  * The function automatically detects the map's Coordinate Reference System (CRS) to select appropriate units and breaks.
-  * Supports several common styles, including "segment", "bar", and "ticks".
-  
+MAJOR IMPROVEMENTS
+-------------------
+
+- **Major redesign of `geom_world()`**  
+  Fully rebuilt global basemap system with bundled world polygons, coastlines, and
+  boundaries; improved antimeridian handling; more reliable behavior under complex
+  projections; and clearer, more consistent styling controls.
+
+- **Major redesign of the external data workflow (`check_geodata()`)**  
+  The data-management system has been rewritten to meet CRAN size limits and improve
+  reliability. Required datasets are now located or retrieved automatically using a
+  priority search (local directories → package extdata → user cache), with retry,
+  resume, mirror fallbacks, and fully graceful failure. All mapping functions now
+  call this workflow internally.
+
+IMPROVEMENTS
+------------
+
+- More robust CRS parsing, including reliable extraction of `lon_0` from PROJ strings.
+- Better stability with `coord_sf()`, especially for global projections and shifted
+  central meridians.
+- Updated documentation and examples, including usage of the new world dataset
+  (`world_countries.rda`, `world_coastlines.rda`, `world_boundaries.rda`).
+- More consistent rendering across projections such as Robinson, Mollweide, and
+  shifted longitude systems.

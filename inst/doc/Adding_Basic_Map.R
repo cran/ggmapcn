@@ -6,11 +6,14 @@ knitr::opts_chunk$set(
 
 ## ----setup--------------------------------------------------------------------
 library(ggmapcn)
+# Define Azimuthal Equidistant projection centered on China
+china_proj <- "+proj=aeqd +lat_0=35 +lon_0=105 +ellps=WGS84 +units=m +no_defs"
 
 ## ----example1, fig.alt='Basic Map'--------------------------------------------
 ggplot() +
   geom_mapcn() +
-  theme_minimal()
+  geom_boundary_cn() +
+  theme_bw()
 
 ## ----example2, fig.alt='Map of China'-----------------------------------------
 ggplot() +
@@ -20,54 +23,69 @@ ggplot() +
   geom_boundary_cn() +
   theme_bw()
 
-## ----example3, fig.alt='Map of world'-----------------------------------------
-# Define projections
-china_proj <- "+proj=aeqd +lat_0=35 +lon_0=105 +ellps=WGS84 +units=m +no_defs"
-
-# Combine world map as a background and China map as overlay
+## ----geom_loc, fig.alt='Sample site'------------------------------------------
+# Create a ggplot with spatial points colored by 'Category'
+set.seed(123)
+data_sim <- data.frame(
+   Longitude = runif(100, 80, 120),
+   Latitude = runif(100, 28, 40),
+   Category = sample(c("Type A", "Type B", "Type C"), 100, replace = TRUE)
+   )
 ggplot() +
-  # World map as background
-  geom_world(fill = "gray90", color = "gray70", linewidth = 0.2) +
-  coord_proj(
-    crs = "+proj=merc",
-    xlim = c(-180, 180),
-    ylim = c(-90, 90)
-  ) +
-  # Overlay China map
-  geom_mapcn(
-    fill = "lightblue",
-    color = "black",
-    linewidth = 0.5
-  ) +
-  geom_boundary_cn(color = "red", linewidth = 0.6) +
-  theme_minimal()
+   geom_boundary_cn() +
+   geom_loc(
+     data = data_sim, lon = "Longitude", lat = "Latitude",
+     mapping = aes(color = Category), size = 1, alpha = 0.7
+   ) +
+   theme_bw()
 
-## ----example4, fig.alt='Map of China'-----------------------------------------
-# Define neighboring countries
-china_neighbors <- c("CHN", "AFG", "BTN", "MMR", "LAO", "NPL", "PRK", "KOR",
-                     "KAZ", "KGZ", "MNG", "IND", "BGD", "TJK", "PAK", "LKA", "VNM")
+## ----check-geodata, eval=FALSE------------------------------------------------
+#  # This function checks if the required data files are available
+#  # It may take some time, especially if your network connection is slow.
+#    check_geodata(files = c("vege_1km_projected.tif"), quiet = FALSE)
 
-# Plot world map with filtered countries
+## ----vegetion map, fig.alt='Vegetation Map of China', eval=FALSE--------------
+#  # Add vegetation raster of China to a ggplot
+#  ggplot() +
+#    basemap_vege() +
+#    guides(fill = guide_none()) +
+#    theme_bw()
+
+## ----dem map, fig.alt='Elevation Map of China'--------------------------------
+# Apply Azimuthal Equidistant projection centered on China
 ggplot() +
-  geom_world(fill = "gray90", color = "gray70", linewidth = 0.2) +
-  geom_world(
-    filter = china_neighbors,
-    filter_attribute = "SOC",
-    fill = "lightblue",
-    color = "black",
-    linewidth = 0.5
+  basemap_dem(crs = china_proj, within_china = TRUE) +
+  geom_boundary_cn(crs = china_proj) +
+  tidyterra::scale_fill_hypso_c(
+    palette = "dem_print",
+    breaks = c(0, 2000, 4000, 6000),
+    limits = c(0, 7000)
   ) +
-  geom_world(
-    filter = "CHN",
-    filter_attribute = "SOC",
-    fill = "red",
-    color = "black",
-    linewidth = 0.8
-  ) +
+  labs(fill = "Elevation (m)") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+## ----clip region, fig.alt='clip region'---------------------------------------
+ggplot() +
+  geom_mapcn(fill = "white") +
+  geom_boundary_cn() +
   coord_proj(
-    crs = "+proj=merc",
+    crs = china_proj,
     xlim = c(60, 140),
-    ylim = c(-10, 60)
+    ylim = c(10, 50)
   ) +
-  theme_minimal()
+  theme_bw()
+
+
+## ----Nanhai, fig.alt='Naihai'-------------------------------------------------
+ggplot() +
+  geom_mapcn(fill = "white") +
+  geom_boundary_cn() +
+  theme_bw() +
+  coord_proj(
+    crs = china_proj,
+    expand = FALSE,
+    xlim = c(105, 126),
+    ylim = c(2, 23)
+  )
 

@@ -1,14 +1,16 @@
 Package: ggmapcn
-Title: Customizable China Map Visualizations
-Version: 0.2.0
+Title: Customizable China and Global Map Visualizations
+Version: 0.3.0
 Authors@R: 
     person("Liang", "Ren", email = "rl23@mails.tsinghua.edu.cn", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-2360-7900"))
-Description: A 'ggplot2' extension for visualizing China’s map, offering customizable projections, boundary styles, and buffer zones for thematic maps. 
-    Suitable for spatial data analysis and enhancing map visualization with flexible styling options.
+Description: A 'ggplot2' extension centered on map visualization of China
+    and the globe. Provides customizable projections, boundary styles,
+    coordinate grids, scale bars, and buffer zones for thematic maps,
+    suitable for spatial data analysis and cartographic visualization.
 License: GPL-3
 Encoding: UTF-8
-Depends: R (>= 3.5.0), ggplot2 (>= 3.3.0)
+Depends: R (>= 4.3.0), ggplot2 (>= 3.5.0)
 Imports: sf (>= 1.0.0), dplyr (>= 1.1.0), terra (>= 1.7), tidyterra (>=
         0.6.0), curl (>= 5.0.0), rlang, digest, grid
 URL: https://rimagination.github.io/ggmapcn/
@@ -18,8 +20,8 @@ VignetteBuilder: knitr
 Config/testthat/edition: 3
 RoxygenNote: 7.3.2
 NeedsCompilation: no
-Packaged: 2025-10-10 08:56:03 UTC; Administrator
+Packaged: 2025-11-23 04:52:44 UTC; Administrator
 Author: Liang Ren [aut, cre] (ORCID: <https://orcid.org/0000-0002-2360-7900>)
 Maintainer: Liang Ren <rl23@mails.tsinghua.edu.cn>
 Repository: CRAN
-Date/Publication: 2025-10-10 11:10:02 UTC
+Date/Publication: 2025-11-23 06:10:08 UTC
