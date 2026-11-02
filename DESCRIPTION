@@ -1,13 +1,18 @@
 Package: ggmapcn
 Title: Customizable China and Global Map Visualizations
-Version: 0.3.0
+Version: 0.3.1
 Authors@R: 
     person("Liang", "Ren", email = "rl23@mails.tsinghua.edu.cn", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-2360-7900"))
-Description: A 'ggplot2' extension centered on map visualization of China
-    and the globe. Provides customizable projections, boundary styles,
-    coordinate grids, scale bars, and buffer zones for thematic maps,
-    suitable for spatial data analysis and cartographic visualization.
+Description: Provides 'ggplot2' layers and annotations for thematic mapping
+    of China and the world. Uses administrative division data from the
+    'Tianditu' geospatial information service and separate layers for land
+    borders, coastlines, and maritime boundaries. Supports province-,
+    city-, and county-level maps, map projections, graticules, scale bars,
+    north arrows, boundary buffers, and elevation and vegetation raster
+    layers. The package provides default map datasets. Larger data files are
+    hosted in a companion repository
+    <https://github.com/Rimagination/ggmapcn-data> and retrieved as needed.
 License: GPL-3
 Encoding: UTF-8
 Depends: R (>= 4.3.0), ggplot2 (>= 3.5.0)
@@ -18,10 +23,10 @@ BugReports: https://github.com/Rimagination/ggmapcn/issues
 Suggests: knitr, rmarkdown, testthat (>= 3.0.0)
 VignetteBuilder: knitr
 Config/testthat/edition: 3
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 NeedsCompilation: no
-Packaged: 2025-11-23 04:52:44 UTC; Administrator
+Packaged: 2026-11-02 06:48:23 UTC; Liang
 Author: Liang Ren [aut, cre] (ORCID: <https://orcid.org/0000-0002-2360-7900>)
 Maintainer: Liang Ren <rl23@mails.tsinghua.edu.cn>
 Repository: CRAN
-Date/Publication: 2025-11-23 06:10:08 UTC
+Date/Publication: 2026-11-02 07:50:02 UTC
